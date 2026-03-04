@@ -1,0 +1,15 @@
+{
+  "name": "openclaw-model-manager",
+  "version": "1.0.0",
+  "description": "Telegram Bot for managing OpenClaw models and API keys",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["openclaw", "telegram", "bot", "model-manager"],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
