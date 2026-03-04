@@ -19,14 +19,14 @@
 ## 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/openclaw-model-manager/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pjl914335852-ux/openclaw-model-manager/master/install.sh | bash
 ```
 
 或者手动安装：
 
 ```bash
 # 1. 下载安装脚本
-wget https://raw.githubusercontent.com/YOUR_USERNAME/openclaw-model-manager/main/install.sh
+wget https://raw.githubusercontent.com/pjl914335852-ux/openclaw-model-manager/master/install.sh
 
 # 2. 运行安装
 chmod +x install.sh
@@ -141,6 +141,6 @@ MIT License
 
 ## 支持
 
-- GitHub Issues: [提交问题](https://github.com/YOUR_USERNAME/openclaw-model-manager/issues)
+- GitHub Issues: [提交问题](https://github.com/pjl914335852-ux/openclaw-model-manager/issues)
 - OpenClaw 文档: https://docs.openclaw.ai
 - OpenClaw Discord: https://discord.com/invite/clawd

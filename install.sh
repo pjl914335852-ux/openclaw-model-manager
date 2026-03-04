@@ -8,7 +8,7 @@ set -e
 
 INSTALL_DIR="$HOME/model-manager"
 SERVICE_NAME="model-manager"
-REPO_URL="https://raw.githubusercontent.com/placeholder/model-manager/main"
+REPO_URL="https://raw.githubusercontent.com/pjl914335852-ux/openclaw-model-manager/master"
 
 # 颜色
 RED='\033[0;31m'
