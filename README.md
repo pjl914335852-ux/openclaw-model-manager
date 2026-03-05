@@ -2,10 +2,40 @@
 
 通过 Telegram Bot 管理你的 OpenClaw 模型和 API 密钥。
 
+## ✨ 最新更新（2026-03-05）
+
+### 🎉 重大功能更新
+
+1. **⏰ 定时任务管理**
+   - 自动读取 OpenClaw 现有的 cron 任务
+   - 为每个任务单独选择模型
+   - 智能缓存，流畅丝滑
+   - 支持删除任务（二次确认）
+
+2. **🛡️ 删除二次确认**
+   - Provider 删除需要确认
+   - 模型删除需要确认
+   - 定时任务删除需要确认
+   - 防止误操作
+
+3. **📦 Provider 模板**
+   - 支持 DeepSeek（2个模型）
+   - 支持 OpenAI（4个模型）
+   - 支持 Anthropic（4个模型，含最新 Claude Opus 4.6）
+   - 支持 Google（4个模型）
+   - 选择模板后自动添加所有模型
+
+4. **⚡ 性能优化**
+   - 定时任务缓存 5 分钟
+   - 超时时间增加到 15 秒
+   - 添加刷新按钮
+   - 大幅提升响应速度
+
 ## 功能
 
 - 🔑 **密钥管理**：添加/修改/删除 API Provider 和密钥
 - 🤖 **模型管理**：管理模型列表、设置默认模型
+- ⏰ **定时任务**：管理 OpenClaw cron 任务，为每个任务选择模型
 - 🔄 **远程重启**：修改配置后一键重启 OpenClaw 生效
 - 📋 **配置查看**：查看当前配置概览
 - 🔒 **安全**：首次 `/start` 自动绑定你的 Telegram ID，只有你能管理
@@ -34,6 +64,19 @@ chmod +x install.sh
 ```
 
 安装过程中会要求你输入 Bot Token。
+
+## 🔄 如何更新
+
+如果你已经安装过旧版本，更新到最新版：
+
+```bash
+cd ~/model-manager
+git pull origin master
+pm2 restart model-manager
+# 或 sudo systemctl restart model-manager
+```
+
+**重要提示：** 更新后需要重启服务才能生效！
 
 ## 使用
 
