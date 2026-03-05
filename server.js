@@ -72,6 +72,7 @@ function registerUser(userId) {
 }
 
 const sessions = {};
+const cronCache = {}; // 缓存 cron 任务，key: userId, value: { jobs: [], timestamp: number }
 let offset = 0;
 
 function tgApi(method, body = {}) {
@@ -128,9 +129,56 @@ function restartGateway() {
   catch (e) { try { execSync('kill -USR1 $(pgrep -f "openclaw")', { timeout: 3000 }); return true; } catch { return false; } }
 }
 
+// Provider 模板
+const PROVIDER_TEMPLATES = {
+  'deepseek': {
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    api: 'openai-completions',
+    models: [
+      { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+      { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' }
+    ]
+  },
+  'openai': {
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    api: 'openai-completions',
+    models: [
+      { id: 'gpt-4o', name: 'GPT-4o' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
+      { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
+    ]
+  },
+  'anthropic': {
+    name: 'Anthropic',
+    baseUrl: 'https://api.anthropic.com/v1',
+    api: 'anthropic-messages',
+    models: [
+      { id: 'claude-opus-4-6-20260205', name: 'Claude Opus 4.6' },
+      { id: 'claude-sonnet-4-6-20260205', name: 'Claude Sonnet 4.6' },
+      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
+      { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' }
+    ]
+  },
+  'google': {
+    name: 'Google',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    api: 'google-ai',
+    models: [
+      { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash' },
+      { id: 'gemini-exp-1206', name: 'Gemini Exp 1206' },
+      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
+      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' }
+    ]
+  }
+};
+
 function mainMenu() {
   return { inline_keyboard: [
     [{ text: '🔑 密钥管理', callback_data: 'menu_keys' }, { text: '🤖 模型管理', callback_data: 'menu_models' }],
+    [{ text: '⏰ 定时任务', callback_data: 'menu_cron' }],
     [{ text: '👁 查看当前配置', callback_data: 'view_config' }],
     [{ text: '🔄 重启生效', callback_data: 'restart' }],
   ]};
@@ -166,6 +214,71 @@ function modelsMenu(config) {
   ]};
 }
 
+function cronEditMenu(jobId) {
+  return { inline_keyboard: [
+    [{ text: '🤖 选择模型', callback_data: `cron_select_model_${jobId}` }],
+    [{ text: '🗑️ 删除任务', callback_data: `del_cron_${jobId}` }],
+    [{ text: '◀ 返回', callback_data: 'menu_cron' }],
+  ]};
+}
+
+// 获取 OpenClaw cron 任务列表（带缓存）
+function getOpenClawCronJobs(userId, forceRefresh = false) {
+  const now = Date.now();
+  const cache = cronCache[userId];
+  
+  // 如果有缓存且未过期（5分钟内），且不是强制刷新，返回缓存
+  if (!forceRefresh && cache && (now - cache.timestamp < 300000)) {
+    console.log('[Cron] 使用缓存，任务数:', cache.jobs.length);
+    return cache.jobs;
+  }
+  
+  try {
+    console.log('[Cron] 正在获取任务列表...');
+    const output = execSync('openclaw cron list --json 2>&1', { encoding: 'utf8', timeout: 15000 });
+    const data = JSON.parse(output);
+    const jobs = data.jobs || [];
+    
+    // 更新缓存
+    cronCache[userId] = { jobs, timestamp: now };
+    console.log('[Cron] 获取成功，任务数:', jobs.length);
+    
+    return jobs;
+  } catch (e) {
+    console.error('[Cron] 获取任务失败:', e.message);
+    // 如果获取失败但有缓存，返回缓存
+    if (cache) {
+      console.log('[Cron] 获取失败，使用旧缓存');
+      return cache.jobs;
+    }
+    return [];
+  }
+}
+
+// 更新 cron 任务的模型
+function updateCronJobModel(jobId, model) {
+  try {
+    // 使用 openclaw cron update 命令
+    const cmd = `openclaw cron update ${jobId} --set payload.model="${model}"`;
+    execSync(cmd, { timeout: 15000 });
+    return true;
+  } catch (e) {
+    console.error('更新 cron 任务模型失败:', e.message);
+    return false;
+  }
+}
+
+// 删除 cron 任务
+function deleteCronJob(jobId) {
+  try {
+    execSync(`openclaw cron remove ${jobId}`, { timeout: 15000 });
+    return true;
+  } catch (e) {
+    console.error('删除 cron 任务失败:', e.message);
+    return false;
+  }
+}
+
 async function handleCallback(chatId, userId, msgId, data, cbId) {
   if (!isAllowed(userId)) { await answerCallback(cbId, '❌ 无权限'); return; }
   await answerCallback(cbId);
@@ -189,6 +302,135 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     const def = config.agents?.defaults?.model?.primary || '未设置';
     await editMsg(chatId, msgId, `🤖 <b>模型管理</b>\n\n默认模型：<code>${def}</code>\n\n${modelList||'暂无模型'}`, { reply_markup: modelsMenu(config) });
 
+  } else if (data === 'menu_cron' || data === 'cron_refresh') {
+    const forceRefresh = data === 'cron_refresh';
+    const jobs = getOpenClawCronJobs(userId, forceRefresh);
+    
+    let text = '⏰ <b>定时任务管理</b>\n\n';
+    if (jobs.length === 0) {
+      text += '暂无定时任务\n\n';
+      text += '💡 提示：点击"🔄 刷新"重新获取任务列表';
+    } else {
+      text += `共 ${jobs.length} 个任务\n\n`;
+      jobs.forEach((job) => {
+        const status = job.enabled !== false ? '✅' : '❌';
+        const modelText = job.payload?.model || '默认模型';
+        const scheduleText = job.schedule?.expr || '未设置';
+        text += `${status} <b>${job.name || job.id}</b>\n`;
+        text += `   模型: <code>${modelText}</code>\n`;
+        text += `   时间: <code>${scheduleText}</code>\n\n`;
+      });
+    }
+    
+    const buttons = jobs.map((job) => [{ 
+      text: `⚙️ ${job.name || job.id}`, 
+      callback_data: `edit_cron_${job.id}` 
+    }]);
+    buttons.push([{ text: '🔄 刷新任务列表', callback_data: 'cron_refresh' }]);
+    buttons.push([{ text: '◀ 返回', callback_data: 'main_menu' }]);
+    
+    await editMsg(chatId, msgId, text, { reply_markup: { inline_keyboard: buttons } });
+
+  } else if (data.startsWith('edit_cron_')) {
+    const jobId = data.replace('edit_cron_', '');
+    const jobs = getOpenClawCronJobs(userId, false); // 使用缓存
+    const job = jobs.find(j => j.id === jobId);
+    
+    if (!job) {
+      await editMsg(chatId, msgId, '❌ 任务不存在或已被删除\n\n请返回刷新任务列表', { 
+        reply_markup: { inline_keyboard: [[{ text: '🔄 刷新', callback_data: 'cron_refresh' }]] } 
+      });
+      return;
+    }
+    
+    const status = job.enabled !== false ? '✅ 已启用' : '❌ 已禁用';
+    const modelText = job.payload?.model || '默认模型';
+    const scheduleText = job.schedule?.expr || '未设置';
+    const nextRun = job.state?.nextRunAtMs ? new Date(job.state.nextRunAtMs).toLocaleString('zh-CN') : '未知';
+    
+    let text = `⚙️ <b>编辑定时任务</b>\n\n`;
+    text += `名称: <b>${job.name || job.id}</b>\n`;
+    text += `时间: <code>${scheduleText}</code>\n`;
+    text += `模型: <code>${modelText}</code>\n`;
+    text += `状态: ${status}\n`;
+    text += `下次运行: ${nextRun}\n`;
+    
+    await editMsg(chatId, msgId, text, { reply_markup: cronEditMenu(jobId) });
+
+  } else if (data.startsWith('cron_select_model_')) {
+    const jobId = data.replace('cron_select_model_', '');
+    const providers = config.models?.providers || {};
+    const allModels = [];
+    for (const [provName, prov] of Object.entries(providers)) {
+      for (const m of (prov.models||[])) allModels.push(`${provName}/${m.id}`);
+    }
+    const buttons = allModels.map(m => [{ 
+      text: m, 
+      callback_data: `cron_set_model_${jobId}_${m.replace('/', '|')}` 
+    }]);
+    buttons.push([{ text: '◀ 返回', callback_data: `edit_cron_${jobId}` }]);
+    await editMsg(chatId, msgId, '🤖 选择模型：', { reply_markup: { inline_keyboard: buttons } });
+
+  } else if (data.startsWith('cron_set_model_')) {
+    const parts = data.replace('cron_set_model_', '').split('_');
+    const jobId = parts[0];
+    const modelId = parts.slice(1).join('_').replace('|', '/');
+    
+    const success = updateCronJobModel(jobId, modelId);
+    
+    if (success) {
+      // 清除缓存，强制下次刷新
+      delete cronCache[userId];
+      
+      await editMsg(chatId, msgId, `✅ 已设置模型: <code>${modelId}</code>\n\n记得重启 Gateway 生效！`, {
+        reply_markup: { inline_keyboard: [
+          [{ text: '◀ 返回', callback_data: `edit_cron_${jobId}` }],
+          [{ text: '🔄 重启', callback_data: 'restart' }]
+        ]}
+      });
+    } else {
+      await editMsg(chatId, msgId, `❌ 设置失败，请检查日志`, {
+        reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: `edit_cron_${jobId}` }]] }
+      });
+    }
+
+  } else if (data.startsWith('del_cron_')) {
+    const jobId = data.replace('del_cron_', '');
+    const jobs = getOpenClawCronJobs(userId, false); // 使用缓存
+    const job = jobs.find(j => j.id === jobId);
+    
+    if (!job) {
+      await editMsg(chatId, msgId, '❌ 任务不存在', { 
+        reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_cron' }]] } 
+      });
+      return;
+    }
+    
+    // 二次确认
+    await editMsg(chatId, msgId, `⚠️ <b>确认删除定时任务？</b>\n\n名称: <b>${job.name || job.id}</b>\n时间: <code>${job.schedule?.expr || '未设置'}</code>\n\n⚠️ 删除后无法恢复！`, {
+      reply_markup: { inline_keyboard: [
+        [{ text: '✅ 确认删除', callback_data: `confirm_del_cron_${jobId}` }],
+        [{ text: '❌ 取消', callback_data: `edit_cron_${jobId}` }]
+      ]}
+    });
+
+  } else if (data.startsWith('confirm_del_cron_')) {
+    const jobId = data.replace('confirm_del_cron_', '');
+    const success = deleteCronJob(jobId);
+    
+    if (success) {
+      // 清除缓存，强制下次刷新
+      delete cronCache[userId];
+      
+      await editMsg(chatId, msgId, `✅ 定时任务已删除`, {
+        reply_markup: { inline_keyboard: [[{ text: '◀ 返回任务列表', callback_data: 'cron_refresh' }]] }
+      });
+    } else {
+      await editMsg(chatId, msgId, `❌ 删除失败，请检查日志`, {
+        reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: `edit_cron_${jobId}` }]] }
+      });
+    }
+
   } else if (data === 'view_config') {
     const providers = config.models?.providers || {};
     let text = '📋 <b>当前配置概览</b>\n\n';
@@ -211,6 +453,16 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
 
   } else if (data.startsWith('del_provider_')) {
     const provName = data.replace('del_provider_', '');
+    // 二次确认
+    await editMsg(chatId, msgId, `⚠️ <b>确认删除 Provider？</b>\n\n名称：<code>${provName}</code>\n\n⚠️ 这将删除该 Provider 的所有配置和模型！`, {
+      reply_markup: { inline_keyboard: [
+        [{ text: '✅ 确认删除', callback_data: `confirm_del_provider_${provName}` }],
+        [{ text: '❌ 取消', callback_data: 'menu_keys' }]
+      ]}
+    });
+
+  } else if (data.startsWith('confirm_del_provider_')) {
+    const provName = data.replace('confirm_del_provider_', '');
     delete config.models.providers[provName];
     saveConfig(config);
     await editMsg(chatId, msgId, `✅ 已删除 Provider: <code>${provName}</code>\n记得重启生效`, {
@@ -219,6 +471,17 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
 
   } else if (data.startsWith('del_model_')) {
     const parts = data.replace('del_model_', '').split('|');
+    const provName = parts[0], modelId = parts[1];
+    // 二次确认
+    await editMsg(chatId, msgId, `⚠️ <b>确认删除模型？</b>\n\n模型：<code>${provName}/${modelId}</code>\n\n⚠️ 删除后无法恢复！`, {
+      reply_markup: { inline_keyboard: [
+        [{ text: '✅ 确认删除', callback_data: `confirm_del_model_${provName}|${modelId}` }],
+        [{ text: '❌ 取消', callback_data: 'menu_models' }]
+      ]}
+    });
+
+  } else if (data.startsWith('confirm_del_model_')) {
+    const parts = data.replace('confirm_del_model_', '').split('|');
     const provName = parts[0], modelId = parts[1];
     if (config.models?.providers?.[provName]) {
       config.models.providers[provName].models = (config.models.providers[provName].models||[]).filter(m => m.id !== modelId);
@@ -230,9 +493,47 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     });
 
   } else if (data === 'add_provider') {
+    // 显示 Provider 模板选择
+    const buttons = Object.entries(PROVIDER_TEMPLATES).map(([id, tpl]) => [
+      { text: `📦 ${tpl.name}`, callback_data: `add_provider_template_${id}` }
+    ]);
+    buttons.push([{ text: '🔧 自定义配置', callback_data: 'add_provider_custom' }]);
+    buttons.push([{ text: '❌ 取消', callback_data: 'menu_keys' }]);
+    await editMsg(chatId, msgId, '➕ <b>添加新 Provider</b>\n\n选择 Provider 类型：', {
+      reply_markup: { inline_keyboard: buttons }
+    });
+
+  } else if (data.startsWith('add_provider_template_')) {
+    const templateId = data.replace('add_provider_template_', '');
+    const template = PROVIDER_TEMPLATES[templateId];
+    if (!template) {
+      await editMsg(chatId, msgId, '❌ 无效的模板', { reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'add_provider' }]] } });
+      return;
+    }
+    
+    // 显示模板信息
+    let text = `📦 <b>${template.name}</b>\n\n`;
+    text += `🔗 Base URL: <code>${template.baseUrl}</code>\n`;
+    text += `🔌 API 类型: ${template.api}\n\n`;
+    text += `📋 <b>支持的模型：</b>\n`;
+    template.models.forEach((m, i) => {
+      text += `${i+1}. ${m.name}\n   ID: <code>${m.id}</code>\n`;
+    });
+    text += `\n请发送 ${template.name} 的 API Key：`;
+    
+    sessions[userId] = { 
+      step: 'add_provider_template_key', 
+      templateId,
+      provName: templateId 
+    };
+    await editMsg(chatId, msgId, text, {
+      reply_markup: { inline_keyboard: [[{ text: '❌ 取消', callback_data: 'menu_keys' }]] }
+    });
+
+  } else if (data === 'add_provider_custom') {
     sessions[userId] = { step: 'add_provider_name' };
-    await editMsg(chatId, msgId, '➕ <b>添加新 Provider</b>\n\n请发送 Provider 名称（如：my-relay）：', {
-      reply_markup: { inline_keyboard: [[{ text: '取消', callback_data: 'main_menu' }]] }
+    await editMsg(chatId, msgId, '🔧 <b>自定义 Provider</b>\n\n请发送 Provider 名称（如：my-relay）：', {
+      reply_markup: { inline_keyboard: [[{ text: '❌ 取消', callback_data: 'menu_keys' }]] }
     });
 
   } else if (data === 'add_model') {
@@ -313,6 +614,58 @@ async function handleText(chatId, userId, text) {
   } else if (session.step === 'add_provider_url') {
     sessions[userId] = { ...session, step: 'add_provider_key', url: text.trim() };
     await sendMsg(chatId, `URL：<code>${text.trim()}</code>\n\n请发送 API Key：`);
+
+  } else if (session.step === 'add_provider_template_key') {
+    const { templateId, provName } = session;
+    const template = PROVIDER_TEMPLATES[templateId];
+    if (!template) {
+      await sendMsg(chatId, '❌ 无效的模板');
+      sessions[userId] = null;
+      return;
+    }
+    
+    // 使用模板创建 Provider
+    if (!config.models) config.models = { mode: 'merge', providers: {} };
+    if (!config.models.providers) config.models.providers = {};
+    
+    config.models.providers[provName] = {
+      baseUrl: template.baseUrl,
+      apiKey: text.trim(),
+      api: template.api,
+      models: template.models.map(m => ({
+        id: m.id,
+        name: m.name,
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 8192
+      }))
+    };
+    
+    // 添加到 agents.defaults.models
+    if (!config.agents?.defaults?.models) {
+      if (!config.agents) config.agents = {};
+      if (!config.agents.defaults) config.agents.defaults = {};
+      config.agents.defaults.models = {};
+    }
+    template.models.forEach(m => {
+      config.agents.defaults.models[`${provName}/${m.id}`] = {};
+    });
+    
+    saveConfig(config);
+    sessions[userId] = null;
+    
+    let text = `✅ <b>Provider ${provName} 已添加！</b>\n\n`;
+    text += `已自动添加 ${template.models.length} 个模型：\n`;
+    template.models.forEach(m => {
+      text += `• <code>${provName}/${m.id}</code>\n`;
+    });
+    text += `\n记得重启生效！`;
+    
+    await sendMsg(chatId, text, {
+      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_keys' }, { text: '🔄 重启', callback_data: 'restart' }]] }
+    });
 
   } else if (session.step === 'add_provider_key') {
     const { provName, url } = session;
