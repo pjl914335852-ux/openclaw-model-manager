@@ -1,10 +1,30 @@
 # 🐱 发财猫模型管理器
 
+[![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)](https://github.com/pjl914335852-ux/openclaw-model-manager/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 通过 Telegram Bot 管理你的 OpenClaw 模型和 API 密钥。
 
-## ✨ 最新更新（2026-03-05）
+## ✨ 最新更新（2026-03-06）
 
-### 🎉 重大功能更新
+### 🚀 v1.2.0 - 系统监控功能
+
+1. **💻 系统监控**
+   - 从 Telegram 查看服务器状态
+   - CPU、内存、磁盘使用情况
+   - 系统运行时间和负载
+   - 机器人进程信息
+   - 无需 SSH 登录
+
+**使用方法：**
+- 发送 `/system` 命令
+- 或点击主菜单的 "💻 系统监控" 按钮
+
+---
+
+## 📋 历史更新（2026-03-05）
+
+### 🎉 v1.1.0 - 重大功能更新
 
 1. **⏰ 定时任务管理**
    - 自动读取 OpenClaw 现有的 cron 任务
