@@ -178,7 +178,7 @@ const PROVIDER_TEMPLATES = {
 function mainMenu() {
   return { inline_keyboard: [
     [{ text: '🔑 密钥管理', callback_data: 'menu_keys' }, { text: '🤖 模型管理', callback_data: 'menu_models' }],
-    [{ text: '⏰ 定时任务', callback_data: 'menu_cron' }],
+    [{ text: '⏰ 定时任务', callback_data: 'menu_cron' }, { text: '💻 系统监控', callback_data: 'system_monitor' }],
     [{ text: '👁 查看当前配置', callback_data: 'view_config' }],
     [{ text: '🔄 重启生效', callback_data: 'restart' }],
   ]};
@@ -581,6 +581,101 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     await editMsg(chatId, msgId, `🔑 修改 <code>${provName}</code> 的 API Key\n\n请发送新的 Key：`, {
       reply_markup: { inline_keyboard: [[{ text: '取消', callback_data: 'main_menu' }]] }
     });
+  } else if (data === 'system_monitor') {
+    await handleSystemCommand(chatId, msgId);
+  }
+}
+
+// 系统监控命令
+async function handleSystemCommand(chatId, msgId = null) {
+  try {
+    // Get system info
+    const memInfo = execSync('free -h | grep Mem').toString().trim().split(/\s+/);
+    const diskInfo = execSync('df -h / | tail -1').toString().trim().split(/\s+/);
+    const uptimeInfo = execSync('uptime').toString().trim();
+    const cpuInfo = execSync('top -bn1 | grep "Cpu(s)"').toString().trim();
+    
+    // Parse data
+    const memTotal = memInfo[1];
+    const memUsed = memInfo[2];
+    const memFree = memInfo[3];
+    const memAvail = memInfo[6];
+    
+    const diskSize = diskInfo[1];
+    const diskUsed = diskInfo[2];
+    const diskAvail = diskInfo[3];
+    const diskUse = diskInfo[4];
+    
+    // Parse uptime
+    const uptimeMatch = uptimeInfo.match(/up\s+(.+?),\s+\d+\s+user/);
+    const uptime = uptimeMatch ? uptimeMatch[1] : 'unknown';
+    
+    // Parse load average
+    const loadMatch = uptimeInfo.match(/load average:\s+([\d.]+),\s+([\d.]+),\s+([\d.]+)/);
+    const load1 = loadMatch ? loadMatch[1] : '0';
+    const load5 = loadMatch ? loadMatch[2] : '0';
+    const load15 = loadMatch ? loadMatch[3] : '0';
+    
+    // Parse CPU
+    const cpuMatch = cpuInfo.match(/([\d.]+)\s+us,\s+([\d.]+)\s+sy/);
+    const cpuUser = cpuMatch ? cpuMatch[1] : '0';
+    const cpuSys = cpuMatch ? cpuMatch[2] : '0';
+    const cpuTotal = (parseFloat(cpuUser) + parseFloat(cpuSys)).toFixed(1);
+    
+    // Get bot process info
+    const botPid = process.pid;
+    const botMem = (process.memoryUsage().rss / 1024 / 1024).toFixed(1);
+    
+    const systemText = `
+💻 <b>系统监控</b>
+
+⏰ <b>运行时间:</b> ${uptime}
+
+<b>📊 CPU 使用率:</b>
+• 总计: ${cpuTotal}%
+• 用户: ${cpuUser}%
+• 系统: ${cpuSys}%
+• 负载: ${load1} / ${load5} / ${load15}
+
+<b>🧠 内存使用:</b>
+• 总计: ${memTotal}
+• 已用: ${memUsed}
+• 可用: ${memAvail}
+• 空闲: ${memFree}
+
+<b>💾 磁盘使用:</b>
+• 总计: ${diskSize}
+• 已用: ${diskUsed} (${diskUse})
+• 可用: ${diskAvail}
+
+<b>🤖 机器人进程:</b>
+• PID: ${botPid}
+• 内存: ${botMem} MB
+
+💡 系统运行正常
+    `.trim();
+    
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '🔄 刷新', callback_data: 'system_monitor' },
+          { text: '◀ 返回', callback_data: 'main_menu' }
+        ]
+      ]
+    };
+    
+    if (msgId) {
+      await editMsg(chatId, msgId, systemText, { reply_markup: keyboard });
+    } else {
+      await sendMsg(chatId, systemText, { reply_markup: keyboard });
+    }
+  } catch (error) {
+    const errorText = '❌ 获取系统信息失败';
+    if (msgId) {
+      await editMsg(chatId, msgId, errorText);
+    } else {
+      await sendMsg(chatId, errorText);
+    }
   }
 }
 
@@ -600,6 +695,15 @@ async function handleText(chatId, userId, text) {
     }
     sessions[userId] = null;
     await sendMsg(chatId, '🐱 <b>发财猫模型管理器</b>\n\n选择操作：', { reply_markup: mainMenu() });
+    return;
+  }
+  
+  if (text === '/system') {
+    if (!isAllowed(userId)) {
+      await sendMsg(chatId, '❌ 你没有权限使用此机器人。');
+      return;
+    }
+    await handleSystemCommand(chatId);
     return;
   }
 
