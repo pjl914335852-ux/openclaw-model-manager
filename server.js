@@ -374,18 +374,30 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     for (const [provName, prov] of Object.entries(providers)) {
       for (const m of (prov.models||[])) allModels.push(`${provName}/${m.id}`);
     }
-    const buttons = allModels.map(m => [{ 
-      text: m, 
-      callback_data: `cron_set_model_${jobId}~~${m.replace('/', '|')}` 
+    // 用短索引避免 callback_data 超过 64 字节限制
+    const shortJobId = jobId.split('-')[0]; // 取 UUID 前8位
+    const buttons = allModels.map((m, i) => [{
+      text: m,
+      callback_data: `csm_${shortJobId}_${i}`
     }]);
+    // 把完整映射存到临时缓存
+    if (!global.modelSelectCache) global.modelSelectCache = {};
+    global.modelSelectCache[shortJobId] = { jobId, models: allModels };
     buttons.push([{ text: '◀ 返回', callback_data: `edit_cron_${jobId}` }]);
     await editMsg(chatId, msgId, '🤖 选择模型：', { reply_markup: { inline_keyboard: buttons } });
 
-  } else if (data.startsWith('cron_set_model_')) {
-    const parts = data.replace('cron_set_model_', '').split('~~');
-    const jobId = parts[0];
-    const modelId = (parts[1] || '').replace('|', '/');
-    
+  } else if (data.startsWith('csm_')) {
+    // csm_<shortJobId>_<index>
+    const parts = data.split('_');
+    const shortJobId = parts[1];
+    const idx = parseInt(parts[2]);
+    const cache = global.modelSelectCache?.[shortJobId];
+    if (!cache) {
+      await answerCallback(cbId, '❌ 缓存过期，请重新选择');
+      return;
+    }
+    const { jobId, models } = cache;
+    const modelId = models[idx];
     const success = updateCronJobModel(jobId, modelId);
     
     if (success) {
