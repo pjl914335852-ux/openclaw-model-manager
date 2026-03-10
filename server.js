@@ -123,6 +123,8 @@ function saveConfig(config) {
       try { fs.unlinkSync(path.join(dir, f)); } catch(e) {}
     });
   } catch(e) {}
+  // 自动重启 Gateway 让配置生效
+  try { restartGateway(); } catch(e) {}
 }
 function restartGateway() {
   try { execSync('openclaw gateway restart', { timeout: 8000 }); return true; }
@@ -593,8 +595,8 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     if (!config.agents.defaults) config.agents.defaults = {};
     config.agents.defaults.model = { primary: model, fallbacks: [] };
     saveConfig(config);
-    await editMsg(chatId, msgId, `✅ 默认模型已设为：<code>${model}</code>\n记得重启生效`, {
-      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'main_menu' }, { text: '🔄 重启', callback_data: 'restart' }]] }
+    await editMsg(chatId, msgId, `✅ 默认模型已设为：<code>${model}</code>\n\nGateway 正在重启，约5秒后生效`, {
+      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'main_menu' }]] }
     });
 
   } else if (data.startsWith('edit_key_')) {
