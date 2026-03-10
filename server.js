@@ -177,42 +177,46 @@ const PROVIDER_TEMPLATES = {
 
 function mainMenu() {
   return { inline_keyboard: [
-    [{ text: '🔑 密钥管理', callback_data: 'menu_keys' }, { text: '🤖 模型管理', callback_data: 'menu_models' }],
-    [{ text: '⏰ 定时任务', callback_data: 'menu_cron' }, { text: '💻 系统监控', callback_data: 'system_monitor' }],
-    [{ text: '👁 查看当前配置', callback_data: 'view_config' }],
-    [{ text: '🔄 重启生效', callback_data: 'restart' }],
+    [{ text: '🔌 渠道管理', callback_data: 'menu_channels' }, { text: '⏰ 定时任务', callback_data: 'menu_cron' }],
+    [{ text: '🎯 默认模型', callback_data: 'set_default' }, { text: '💻 系统监控', callback_data: 'system_monitor' }],
+    [{ text: '👁 查看配置', callback_data: 'view_config' }, { text: '🔄 重启生效', callback_data: 'restart' }],
   ]};
 }
 
-function keysMenu(config) {
+// 渠道列表菜单（合并原密钥管理+模型管理）
+function channelsMenu(config) {
   const providers = config.models?.providers || {};
-  const buttons = Object.entries(providers).map(([name, p]) => [
-    { text: `✏️ 改Key: ${name}`, callback_data: `edit_key_${name}` },
-    { text: `❌ 删 ${name}`, callback_data: `del_provider_${name}` },
+  const buttons = Object.entries(providers).map(([name, p]) => {
+    const modelCount = (p.models || []).length;
+    return [{ text: `🔌 ${name}  (${modelCount}个模型)`, callback_data: `channel_detail_${name}` }];
+  });
+  return { inline_keyboard: [
+    ...buttons,
+    [{ text: '➕ 添加渠道', callback_data: 'add_provider' }],
+    [{ text: '◀ 返回', callback_data: 'main_menu' }],
+  ]};
+}
+
+// 单个渠道详情菜单
+function channelDetailMenu(config, provName) {
+  const prov = config.models?.providers?.[provName] || {};
+  const models = prov.models || [];
+  const modelButtons = models.map(m => [
+    { text: `📦 ${m.id}`, callback_data: `noop` },
+    { text: `❌ 删除`, callback_data: `del_model_${provName}|${m.id}` },
   ]);
   return { inline_keyboard: [
-    ...buttons,
-    [{ text: '➕ 添加新Provider', callback_data: 'add_provider' }],
-    [{ text: '◀ 返回', callback_data: 'main_menu' }],
+    [{ text: `🔑 修改 API Key`, callback_data: `edit_key_${provName}` }],
+    [{ text: `➕ 添加模型`, callback_data: `add_model_to_${provName}` }],
+    ...modelButtons,
+    [{ text: `🗑️ 删除整个渠道`, callback_data: `del_provider_${provName}` }],
+    [{ text: '◀ 返回渠道列表', callback_data: 'menu_channels' }],
   ]};
 }
 
-function modelsMenu(config) {
-  const providers = config.models?.providers || {};
-  const allModels = [];
-  for (const [provName, prov] of Object.entries(providers)) {
-    for (const m of (prov.models || [])) {
-      allModels.push({ key: `${provName}|${m.id}`, label: `${provName}/${m.id}` });
-    }
-  }
-  const buttons = allModels.map(m => [{ text: `❌ ${m.label}`, callback_data: `del_model_${m.key}` }]);
-  return { inline_keyboard: [
-    ...buttons,
-    [{ text: '➕ 添加模型', callback_data: 'add_model' }],
-    [{ text: '🎯 设置默认模型', callback_data: 'set_default' }],
-    [{ text: '◀ 返回', callback_data: 'main_menu' }],
-  ]};
-}
+// 保留旧函数名兼容（部分地方还在用）
+function keysMenu(config) { return channelsMenu(config); }
+function modelsMenu(config) { return channelsMenu(config); }
 
 function cronEditMenu(jobId) {
   return { inline_keyboard: [
@@ -287,20 +291,26 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
   if (data === 'main_menu') {
     await editMsg(chatId, msgId, '🐱 <b>发财猫模型管理器</b>\n\n选择操作：', { reply_markup: mainMenu() });
 
-  } else if (data === 'menu_keys') {
-    const list = Object.entries(config.models?.providers || {})
-      .map(([n, p]) => `• <code>${n}</code>\n  URL: <code>${p.baseUrl || '官方'}</code>\n  Key: <code>${(p.apiKey||'').slice(0,25)}...</code>`)
-      .join('\n\n');
-    await editMsg(chatId, msgId, `🔑 <b>密钥/Provider 管理</b>\n\n${list || '暂无'}`, { reply_markup: keysMenu(config) });
-
-  } else if (data === 'menu_models') {
+  } else if (data === 'menu_channels' || data === 'menu_channels' || data === 'menu_channels') {
     const providers = config.models?.providers || {};
-    let modelList = '';
-    for (const [pName, prov] of Object.entries(providers)) {
-      for (const m of (prov.models || [])) modelList += `• <code>${pName}/${m.id}</code>\n`;
-    }
+    const count = Object.keys(providers).length;
     const def = config.agents?.defaults?.model?.primary || '未设置';
-    await editMsg(chatId, msgId, `🤖 <b>模型管理</b>\n\n默认模型：<code>${def}</code>\n\n${modelList||'暂无模型'}`, { reply_markup: modelsMenu(config) });
+    await editMsg(chatId, msgId,
+      `🔌 <b>渠道管理</b>\n\n共 ${count} 个渠道\n默认模型：<code>${def}</code>\n\n点击渠道查看详情和操作`,
+      { reply_markup: channelsMenu(config) });
+
+  } else if (data.startsWith('channel_detail_')) {
+    const provName = data.slice('channel_detail_'.length);
+    const prov = config.models?.providers?.[provName] || {};
+    const models = (prov.models || []).map(m => `• <code>${m.id}</code>`).join('\n') || '暂无模型';
+    const keyPreview = prov.apiKey ? `<code>${prov.apiKey.slice(0,20)}...</code>` : '未设置';
+    const baseUrl = prov.baseUrl || '官方默认';
+    await editMsg(chatId, msgId,
+      `🔌 <b>${provName}</b>\n\nURL: <code>${baseUrl}</code>\nKey: ${keyPreview}\n\n模型列表：\n${models}`,
+      { reply_markup: channelDetailMenu(config, provName) });
+
+  } else if (data === 'noop') {
+    await answerCallback(cbId);
 
   } else if (data === 'menu_cron' || data === 'cron_refresh') {
     const forceRefresh = data === 'cron_refresh';
@@ -457,7 +467,7 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     await editMsg(chatId, msgId, `⚠️ <b>确认删除 Provider？</b>\n\n名称：<code>${provName}</code>\n\n⚠️ 这将删除该 Provider 的所有配置和模型！`, {
       reply_markup: { inline_keyboard: [
         [{ text: '✅ 确认删除', callback_data: `confirm_del_provider_${provName}` }],
-        [{ text: '❌ 取消', callback_data: 'menu_keys' }]
+        [{ text: '❌ 取消', callback_data: 'menu_channels' }]
       ]}
     });
 
@@ -466,7 +476,7 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     delete config.models.providers[provName];
     saveConfig(config);
     await editMsg(chatId, msgId, `✅ 已删除 Provider: <code>${provName}</code>\n记得重启生效`, {
-      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_keys' }, { text: '🔄 重启', callback_data: 'restart' }]] }
+      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
     });
 
   } else if (data.startsWith('del_model_')) {
@@ -476,7 +486,7 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     await editMsg(chatId, msgId, `⚠️ <b>确认删除模型？</b>\n\n模型：<code>${provName}/${modelId}</code>\n\n⚠️ 删除后无法恢复！`, {
       reply_markup: { inline_keyboard: [
         [{ text: '✅ 确认删除', callback_data: `confirm_del_model_${provName}|${modelId}` }],
-        [{ text: '❌ 取消', callback_data: 'menu_models' }]
+        [{ text: '❌ 取消', callback_data: 'menu_channels' }]
       ]}
     });
 
@@ -489,7 +499,7 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
       saveConfig(config);
     }
     await editMsg(chatId, msgId, `✅ 已删除模型: <code>${provName}/${modelId}</code>\n记得重启生效`, {
-      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_models' }, { text: '🔄 重启', callback_data: 'restart' }]] }
+      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
     });
 
   } else if (data === 'add_provider') {
@@ -498,7 +508,7 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
       { text: `📦 ${tpl.name}`, callback_data: `add_provider_template_${id}` }
     ]);
     buttons.push([{ text: '🔧 自定义配置', callback_data: 'add_provider_custom' }]);
-    buttons.push([{ text: '❌ 取消', callback_data: 'menu_keys' }]);
+    buttons.push([{ text: '❌ 取消', callback_data: 'menu_channels' }]);
     await editMsg(chatId, msgId, '➕ <b>添加新 Provider</b>\n\n选择 Provider 类型：', {
       reply_markup: { inline_keyboard: buttons }
     });
@@ -527,13 +537,13 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
       provName: templateId 
     };
     await editMsg(chatId, msgId, text, {
-      reply_markup: { inline_keyboard: [[{ text: '❌ 取消', callback_data: 'menu_keys' }]] }
+      reply_markup: { inline_keyboard: [[{ text: '❌ 取消', callback_data: 'menu_channels' }]] }
     });
 
   } else if (data === 'add_provider_custom') {
     sessions[userId] = { step: 'add_provider_name' };
     await editMsg(chatId, msgId, '🔧 <b>自定义 Provider</b>\n\n请发送 Provider 名称（如：my-relay）：', {
-      reply_markup: { inline_keyboard: [[{ text: '❌ 取消', callback_data: 'menu_keys' }]] }
+      reply_markup: { inline_keyboard: [[{ text: '❌ 取消', callback_data: 'menu_channels' }]] }
     });
 
   } else if (data === 'add_model') {
@@ -768,7 +778,7 @@ async function handleText(chatId, userId, text) {
     text += `\n记得重启生效！`;
     
     await sendMsg(chatId, text, {
-      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_keys' }, { text: '🔄 重启', callback_data: 'restart' }]] }
+      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
     });
 
   } else if (session.step === 'add_provider_key') {
@@ -795,7 +805,7 @@ async function handleText(chatId, userId, text) {
     saveConfig(config);
     sessions[userId] = null;
     await sendMsg(chatId, `✅ 模型 <code>${provName}/${modelId}</code> 已添加！`, {
-      reply_markup: { inline_keyboard: [[{ text: '◀ 模型管理', callback_data: 'menu_models' }, { text: '🔄 重启', callback_data: 'restart' }]] }
+      reply_markup: { inline_keyboard: [[{ text: '◀ 模型管理', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
     });
 
   } else if (session.step === 'edit_key') {
@@ -804,7 +814,7 @@ async function handleText(chatId, userId, text) {
     saveConfig(config);
     sessions[userId] = null;
     await sendMsg(chatId, `✅ <code>${provName}</code> 的 Key 已更新！`, {
-      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_keys' }, { text: '🔄 重启', callback_data: 'restart' }]] }
+      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
     });
   }
 }
