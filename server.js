@@ -376,15 +376,15 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     }
     const buttons = allModels.map(m => [{ 
       text: m, 
-      callback_data: `cron_set_model_${jobId}_${m.replace('/', '|')}` 
+      callback_data: `cron_set_model_${jobId}~~${m.replace('/', '|')}` 
     }]);
     buttons.push([{ text: '◀ 返回', callback_data: `edit_cron_${jobId}` }]);
     await editMsg(chatId, msgId, '🤖 选择模型：', { reply_markup: { inline_keyboard: buttons } });
 
   } else if (data.startsWith('cron_set_model_')) {
-    const parts = data.replace('cron_set_model_', '').split('_');
+    const parts = data.replace('cron_set_model_', '').split('~~');
     const jobId = parts[0];
-    const modelId = parts.slice(1).join('_').replace('|', '/');
+    const modelId = (parts[1] || '').replace('|', '/');
     
     const success = updateCronJobModel(jobId, modelId);
     
