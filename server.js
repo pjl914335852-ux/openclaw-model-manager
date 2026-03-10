@@ -258,9 +258,9 @@ function getOpenClawCronJobs(userId, forceRefresh = false) {
 // 更新 cron 任务的模型
 function updateCronJobModel(jobId, model) {
   try {
-    // 使用 openclaw cron update 命令
-    const cmd = `openclaw cron update ${jobId} --set payload.model="${model}"`;
-    execSync(cmd, { timeout: 15000 });
+    const cmd = `openclaw cron edit ${jobId} --model "${model}"`;
+    const output = execSync(cmd, { encoding: 'utf8', timeout: 15000 });
+    console.log('[Cron] 更新模型成功:', output);
     return true;
   } catch (e) {
     console.error('更新 cron 任务模型失败:', e.message);
