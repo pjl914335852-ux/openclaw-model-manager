@@ -97,8 +97,10 @@ function tgApi(method, body = {}) {
 function sendMsg(chatId, text, extra = {}) {
   return tgApi('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', ...extra });
 }
-function editMsg(chatId, messageId, text, extra = {}) {
-  return tgApi('editMessageText', { chat_id: chatId, message_id: messageId, text, parse_mode: 'HTML', ...extra });
+async function editMsg(chatId, messageId, text, extra = {}) {
+  const res = await tgApi('editMessageText', { chat_id: chatId, message_id: messageId, text, parse_mode: 'HTML', ...extra });
+  if (!res.ok) console.error('[editMsg ERROR]', JSON.stringify(res));
+  return res;
 }
 function answerCallback(id, text = '') {
   return tgApi('answerCallbackQuery', { callback_query_id: id, text });
@@ -205,7 +207,7 @@ function channelDetailMenu(config, provName) {
   const models = prov.models || [];
   const modelButtons = models.map(m => [
     { text: `📦 ${m.id}`, callback_data: `noop` },
-    { text: `❌ 删除`, callback_data: `del_model_${provName}|${m.id}` },
+    { text: `❌ 删除`, callback_data: `dm_${provName}__${m.id}` },
   ]);
   return { inline_keyboard: [
     [{ text: `🔑 修改 API Key`, callback_data: `edit_key_${provName}` }],
@@ -493,20 +495,20 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
       reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
     });
 
-  } else if (data.startsWith('del_model_')) {
-    const parts = data.replace('del_model_', '').split('|');
-    const provName = parts[0], modelId = parts[1];
+  } else if (data.startsWith('dm_')) {
+    const parts = data.replace('dm_', '').split('__');
+    const provName = parts[0], modelId = parts.slice(1).join('__');
     // 二次确认
     await editMsg(chatId, msgId, `⚠️ <b>确认删除模型？</b>\n\n模型：<code>${provName}/${modelId}</code>\n\n⚠️ 删除后无法恢复！`, {
       reply_markup: { inline_keyboard: [
-        [{ text: '✅ 确认删除', callback_data: `confirm_del_model_${provName}|${modelId}` }],
+        [{ text: '✅ 确认删除', callback_data: `cdm_${provName}__${modelId}` }],
         [{ text: '❌ 取消', callback_data: 'menu_channels' }]
       ]}
     });
 
-  } else if (data.startsWith('confirm_del_model_')) {
-    const parts = data.replace('confirm_del_model_', '').split('|');
-    const provName = parts[0], modelId = parts[1];
+  } else if (data.startsWith('cdm_')) {
+    const parts = data.replace('cdm_', '').split('__');
+    const provName = parts[0], modelId = parts.slice(1).join('__');
     if (config.models?.providers?.[provName]) {
       config.models.providers[provName].models = (config.models.providers[provName].models||[]).filter(m => m.id !== modelId);
       if (config.agents?.defaults?.models) delete config.agents.defaults.models[`${provName}/${modelId}`];
@@ -843,6 +845,7 @@ async function poll() {
           offset = update.update_id + 1;
           if (update.callback_query) {
             const cb = update.callback_query;
+            console.log('[DEBUG] callback:', cb.from.id, cb.data);
             handleCallback(cb.message.chat.id, cb.from.id, cb.message.message_id, cb.data, cb.id).catch(console.error);
           } else if (update.message?.text) {
             handleText(update.message.chat.id, update.message.from.id, update.message.text).catch(console.error);
