@@ -766,7 +766,7 @@ async function handleText(chatId, userId, text) {
         id: m.id,
         name: m.name,
         reasoning: false,
-        input: ['text'],
+        input: ['text', 'image'],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 128000,
         maxTokens: 8192
@@ -813,7 +813,7 @@ async function handleText(chatId, userId, text) {
     const modelId = text.trim();
     if (!config.models.providers[provName].models) config.models.providers[provName].models = [];
     config.models.providers[provName].models.push({
-      id: modelId, name: modelId, reasoning: false, input: ['text'],
+      id: modelId, name: modelId, reasoning: false, input: ['text', 'image'],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 8192
     });
     if (!config.agents?.defaults?.models) { if (!config.agents) config.agents = {}; if (!config.agents.defaults) config.agents.defaults = {}; config.agents.defaults.models = {}; }
