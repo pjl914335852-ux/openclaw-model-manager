@@ -491,6 +491,18 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     const provName = data.replace('confirm_del_provider_', '');
     delete config.models.providers[provName];
     saveConfig(config);
+    // 同步清理 agents/main/agent/models.json 缓存
+    try {
+      const agentModelsPath = path.join(path.dirname(CONFIG.openclaw_config), 'agents', 'main', 'agent', 'models.json');
+      if (fs.existsSync(agentModelsPath)) {
+        const am = JSON.parse(fs.readFileSync(agentModelsPath, 'utf8'));
+        if (am.providers?.[provName]) delete am.providers[provName];
+        if (am.usage) {
+          Object.keys(am.usage).forEach(k => { if (k.startsWith(provName + '/')) delete am.usage[k]; });
+        }
+        fs.writeFileSync(agentModelsPath, JSON.stringify(am, null, 2));
+      }
+    } catch(e) { console.error('同步 models.json 失败:', e.message); }
     await editMsg(chatId, msgId, `✅ 已删除 Provider: <code>${provName}</code>\n记得重启生效`, {
       reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
     });
@@ -513,6 +525,34 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
       config.models.providers[provName].models = (config.models.providers[provName].models||[]).filter(m => m.id !== modelId);
       if (config.agents?.defaults?.models) delete config.agents.defaults.models[`${provName}/${modelId}`];
       saveConfig(config);
+      // 同步清理 agents/main/agent/models.json 缓存
+      try {
+        const agentModelsPath = path.join(path.dirname(CONFIG.openclaw_config), 'agents', 'main', 'agent', 'models.json');
+        if (fs.existsSync(agentModelsPath)) {
+          const am = JSON.parse(fs.readFileSync(agentModelsPath, 'utf8'));
+          if (am.providers?.[provName]?.models) {
+            am.providers[provName].models = am.providers[provName].models.filter(m => m.id !== modelId);
+          }
+          if (am.usage) delete am.usage[`${provName}/${modelId}`];
+          fs.writeFileSync(agentModelsPath, JSON.stringify(am, null, 2));
+        }
+      } catch(e) { console.error('同步 models.json 失败:', e.message); }
+      // 同步更新 cron/jobs.json 里引用该模型的任务
+      try {
+        const cronPath = path.join(path.dirname(CONFIG.openclaw_config), 'cron', 'jobs.json');
+        if (fs.existsSync(cronPath)) {
+          let cronRaw = fs.readFileSync(cronPath, 'utf8');
+          const oldModel = `${provName}/${modelId}`;
+          if (cronRaw.includes(oldModel)) {
+            // 找该 provider 下第一个可用模型替换
+            const fallback = config.models?.providers?.[provName]?.models?.[0]?.id;
+            if (fallback) {
+              cronRaw = cronRaw.split(oldModel).join(`${provName}/${fallback}`);
+              fs.writeFileSync(cronPath, cronRaw);
+            }
+          }
+        }
+      } catch(e) { console.error('同步 cron/jobs.json 失败:', e.message); }
     }
     await editMsg(chatId, msgId, `✅ 已删除模型: <code>${provName}/${modelId}</code>\n记得重启生效`, {
       reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
