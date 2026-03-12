@@ -490,6 +490,22 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
   } else if (data.startsWith('confirm_del_provider_')) {
     const provName = data.replace('confirm_del_provider_', '');
     delete config.models.providers[provName];
+    // 清理 agents.defaults.models 里该 provider 的所有模型
+    if (config.agents?.defaults?.models) {
+      Object.keys(config.agents.defaults.models).forEach(k => {
+        if (k.startsWith(provName + '/')) delete config.agents.defaults.models[k];
+      });
+    }
+    // 清理 channels.modelByChannel 里引用该 provider 的配置
+    if (config.channels?.modelByChannel) {
+      Object.keys(config.channels.modelByChannel).forEach(ch => {
+        Object.keys(config.channels.modelByChannel[ch]).forEach(id => {
+          if (config.channels.modelByChannel[ch][id]?.startsWith(provName + '/')) {
+            delete config.channels.modelByChannel[ch][id];
+          }
+        });
+      });
+    }
     saveConfig(config);
     // 同步清理 agents/main/agent/models.json 缓存
     try {
@@ -524,6 +540,16 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     if (config.models?.providers?.[provName]) {
       config.models.providers[provName].models = (config.models.providers[provName].models||[]).filter(m => m.id !== modelId);
       if (config.agents?.defaults?.models) delete config.agents.defaults.models[`${provName}/${modelId}`];
+      // 清理 channels.modelByChannel 里引用该模型的配置
+      if (config.channels?.modelByChannel) {
+        Object.keys(config.channels.modelByChannel).forEach(ch => {
+          Object.keys(config.channels.modelByChannel[ch]).forEach(id => {
+            if (config.channels.modelByChannel[ch][id] === `${provName}/${modelId}`) {
+              delete config.channels.modelByChannel[ch][id];
+            }
+          });
+        });
+      }
       saveConfig(config);
       // 同步清理 agents/main/agent/models.json 缓存
       try {
