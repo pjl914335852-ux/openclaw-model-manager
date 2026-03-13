@@ -129,8 +129,21 @@ function saveConfig(config) {
   try { restartGateway(); } catch(e) {}
 }
 function restartGateway() {
-  try { execSync('openclaw gateway restart', { timeout: 8000 }); return true; }
-  catch (e) { try { execSync('kill -USR1 $(pgrep -f "openclaw")', { timeout: 3000 }); return true; } catch { return false; } }
+  try {
+    // 先检查网关是否在运行
+    const statusOut = execSync('openclaw gateway status 2>/dev/null || echo "stopped"', { encoding: 'utf8', timeout: 5000 });
+    const isRunning = !statusOut.includes('stopped') && !statusOut.includes('inactive') && !statusOut.includes('failed');
+    if (isRunning) {
+      execSync('openclaw gateway restart', { timeout: 10000 });
+    } else {
+      execSync('openclaw gateway start', { timeout: 10000 });
+    }
+    return true;
+  } catch (e) {
+    // 兜底：先 start 再 restart
+    try { execSync('openclaw gateway start 2>/dev/null || openclaw gateway restart', { timeout: 10000 }); return true; }
+    catch { return false; }
+  }
 }
 
 // Provider 模板
@@ -164,6 +177,16 @@ const PROVIDER_TEMPLATES = {
       { id: 'claude-sonnet-4-6-20260205', name: 'Claude Sonnet 4.6' },
       { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
       { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' }
+    ]
+  },
+  'gaoqianba': {
+    name: '高千把中转',
+    baseUrl: 'https://web.gaoqianba.com/v1',
+    api: 'anthropic-messages',
+    models: [
+      { id: 'claude-opus-4-6-20260205', name: 'Claude Opus 4.6 (gaoqianba)' },
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 (gaoqianba)' },
+      { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5 (gaoqianba)' }
     ]
   },
   'google': {
