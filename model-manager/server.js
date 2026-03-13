@@ -266,6 +266,10 @@ function getOpenClawCronJobs(userId, forceRefresh = false) {
 }
 
 // 更新 cron 任务的模型
+function reloadGateway() {
+  try { execSync('pkill -USR1 -f "openclaw.*gateway" 2>/dev/null || true', { timeout: 2000 }); } catch(e) {}
+}
+
 function updateCronJobModel(jobId, model) {
   try {
     const fs = require('fs');
@@ -274,8 +278,7 @@ function updateCronJobModel(jobId, model) {
     if (!job) return false;
     if (job.payload) job.payload.model = model;
     fs.writeFileSync(CRON_JOBS_FILE, JSON.stringify(data, null, 2));
-    // 通知 Gateway 重新加载
-    execSync('openclaw gateway reload 2>/dev/null || true', { timeout: 5000 });
+    reloadGateway();
     return true;
   } catch (e) {
     console.error('更新 cron 任务模型失败:', e.message);
@@ -290,7 +293,7 @@ function deleteCronJob(jobId) {
     const data = JSON.parse(fs.readFileSync(CRON_JOBS_FILE, 'utf8'));
     data.jobs = data.jobs.filter(j => j.id !== jobId);
     fs.writeFileSync(CRON_JOBS_FILE, JSON.stringify(data, null, 2));
-    execSync('openclaw gateway reload 2>/dev/null || true', { timeout: 5000 });
+    reloadGateway();
     return true;
   } catch (e) {
     console.error('删除 cron 任务失败:', e.message);
@@ -971,7 +974,7 @@ async function handleText(chatId, userId, text) {
     };
     jobs.jobs.push(newJob);
     require('fs').writeFileSync(jobsPath, JSON.stringify(jobs, null, 2));
-    require('child_process').execSync('openclaw gateway reload 2>/dev/null || true');
+    reloadGateway();
 
     await sendMsg(chatId,
       `✅ <b>定时任务已创建！</b>\n\n名称：${name}\n模型：${model || '默认'}\n时间：<code>${schedule}</code> (SGT)`,
