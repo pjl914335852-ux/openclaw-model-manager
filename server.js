@@ -775,10 +775,10 @@ async function handleText(chatId, userId, text) {
   const session = sessions[userId];
 
   if (text === '/start' || text === '/model' || text === '/models') {
-    // 首次 /start 自动注册（如果没有预设用户）
-    if (CONFIG.allowedUsers.length === 0) {
+    // 首次 /start 自动注册：只允许第一个用户注册，之后锁定
+    if (CONFIG.allowedUsers.length === 0 && dynamicUsers.length === 0) {
       registerUser(userId);
-      console.log(`[注册] 用户 ${userId} 已自动注册`);
+      console.log(`[注册] 用户 ${userId} 已自动注册为 owner`);
     }
 
     if (!isAllowed(userId)) {
