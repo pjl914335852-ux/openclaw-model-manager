@@ -179,16 +179,6 @@ const PROVIDER_TEMPLATES = {
       { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' }
     ]
   },
-  'gaoqianba': {
-    name: '高千把中转',
-    baseUrl: 'https://web.gaoqianba.com/v1',
-    api: 'anthropic-messages',
-    models: [
-      { id: 'claude-opus-4-6-20260205', name: 'Claude Opus 4.6 (gaoqianba)' },
-      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 (gaoqianba)' },
-      { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5 (gaoqianba)' }
-    ]
-  },
   'google': {
     name: 'Google',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
