@@ -351,6 +351,7 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
       text: `⚙️ ${job.name || job.id}`, 
       callback_data: `edit_cron_${job.id}` 
     }]);
+    buttons.push([{ text: '➕ 新建任务', callback_data: 'cron_new' }]);
     buttons.push([{ text: '🔄 刷新任务列表', callback_data: 'cron_refresh' }]);
     buttons.push([{ text: '◀ 返回', callback_data: 'main_menu' }]);
     
@@ -467,6 +468,27 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
         reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: `edit_cron_${jobId}` }]] }
       });
     }
+
+  } else if (data === 'cron_new') {
+    // 新建任务 — 第一步：选模型
+    const config2 = loadConfig();
+    const providers2 = config2.models?.providers || {};
+    const allModels = [];
+    for (const [provName, prov] of Object.entries(providers2)) {
+      for (const m of (prov.models || [])) allModels.push(`${provName}/${m.id}`);
+    }
+    const modelButtons = allModels.map(m => [{ text: m, callback_data: `cron_new_model_${m}` }]);
+    modelButtons.push([{ text: '⚡ 使用默认模型', callback_data: 'cron_new_model_default' }]);
+    modelButtons.push([{ text: '◀ 返回', callback_data: 'menu_cron' }]);
+    await editMsg(chatId, msgId, '➕ <b>新建定时任务</b>\n\n第一步：选择模型', { reply_markup: { inline_keyboard: modelButtons } });
+
+  } else if (data.startsWith('cron_new_model_')) {
+    const model = data.replace('cron_new_model_', '');
+    sessions[userId] = { step: 'cron_new_prompt', model: model === 'default' ? null : model };
+    await editMsg(chatId, msgId,
+      `➕ <b>新建定时任务</b>\n\n模型：<code>${model}</code>\n\n第二步：请直接发送任务的 Prompt 内容（AI 执行的指令）`,
+      { reply_markup: { inline_keyboard: [[{ text: '❌ 取消', callback_data: 'menu_cron' }]] } }
+    );
 
   } else if (data === 'view_config') {
     const providers = config.models?.providers || {};
@@ -909,6 +931,52 @@ async function handleText(chatId, userId, text) {
     await sendMsg(chatId, `✅ <code>${provName}</code> 的 Key 已更新！`, {
       reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
     });
+
+  } else if (session.step === 'cron_new_prompt') {
+    // 收到 prompt，进入时间设置步骤
+    sessions[userId] = { ...session, step: 'cron_new_schedule', prompt: text.trim() };
+    await sendMsg(chatId,
+      `✅ Prompt 已记录。\n\n第三步：请发送执行时间\n\n格式示例：\n• <code>0 8 * * *</code> — 每天 08:00\n• <code>0 10 * * 0</code> — 每周日 10:00\n• <code>0 21 * * *</code> — 每天 21:00\n\n时区：Asia/Singapore`,
+      { reply_markup: { inline_keyboard: [[{ text: '❌ 取消', callback_data: 'menu_cron' }]] } }
+    );
+
+  } else if (session.step === 'cron_new_schedule') {
+    // 收到 cron 表达式，进入任务名步骤
+    sessions[userId] = { ...session, step: 'cron_new_name', schedule: text.trim() };
+    await sendMsg(chatId,
+      `✅ 时间：<code>${text.trim()}</code>\n\n第四步：请发送任务名称（如：每日市场简报）`,
+      { reply_markup: { inline_keyboard: [[{ text: '❌ 取消', callback_data: 'menu_cron' }]] } }
+    );
+
+  } else if (session.step === 'cron_new_name') {
+    const { model, prompt, schedule } = session;
+    const name = text.trim();
+    sessions[userId] = null;
+
+    // 写入 jobs.json
+    const jobsPath = '/root/.openclaw/cron/jobs.json';
+    let jobs = { version: 1, jobs: [] };
+    try { jobs = JSON.parse(require('fs').readFileSync(jobsPath, 'utf8')); } catch(e) {}
+    const newJob = {
+      id: require('crypto').randomUUID(),
+      agentId: 'main',
+      name,
+      enabled: true,
+      createdAtMs: Date.now(),
+      updatedAtMs: Date.now(),
+      schedule: { kind: 'cron', expr: schedule, tz: 'Asia/Singapore' },
+      sessionTarget: 'isolated',
+      payload: { kind: 'agentTurn', message: prompt, timeoutSeconds: 120, ...(model ? { model } : {}) },
+      delivery: { mode: 'announce' }
+    };
+    jobs.jobs.push(newJob);
+    require('fs').writeFileSync(jobsPath, JSON.stringify(jobs, null, 2));
+    require('child_process').execSync('openclaw gateway reload 2>/dev/null || true');
+
+    await sendMsg(chatId,
+      `✅ <b>定时任务已创建！</b>\n\n名称：${name}\n模型：${model || '默认'}\n时间：<code>${schedule}</code> (SGT)`,
+      { reply_markup: { inline_keyboard: [[{ text: '📋 查看任务列表', callback_data: 'menu_cron' }]] } }
+    );
   }
 }
 
