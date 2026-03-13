@@ -243,7 +243,7 @@ function getOpenClawCronJobs(userId, forceRefresh = false) {
   
   try {
     console.log('[Cron] 正在获取任务列表...');
-    const output = execSync('openclaw cron list --json 2>&1', { encoding: 'utf8', timeout: 15000 });
+    const output = execSync('openclaw cron list --json 2>/dev/null', { encoding: 'utf8', timeout: 15000 });
     const data = JSON.parse(output);
     const jobs = data.jobs || [];
     
