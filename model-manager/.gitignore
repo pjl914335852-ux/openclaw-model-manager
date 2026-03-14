@@ -1,0 +1,14 @@
+# Never upload these to public repos
+*.env
+secrets.env
+MEMORY.md
+SOUL.md
+USER.md
+IDENTITY.md
+AGENTS.md
+TOOLS.md
+HEARTBEAT.md
+memory/
+workspace/
+*.log
+node_modules/
