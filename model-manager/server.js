@@ -664,6 +664,22 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
       reply_markup: { inline_keyboard: [[{ text: '❌ 取消', callback_data: 'menu_channels' }]] }
     });
 
+  } else if (data.startsWith('add_provider_api_')) {
+    const apiType = data.replace('add_provider_api_', '');
+    const { provName, url, apiKey } = sessions[userId] || {};
+    if (!provName || !url || !apiKey) {
+      await editMsg(chatId, msgId, '❌ 会话已过期，请重新开始', { reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_channels' }]] } });
+      return;
+    }
+    if (!config.models) config.models = { mode: 'merge', providers: {} };
+    if (!config.models.providers) config.models.providers = {};
+    config.models.providers[provName] = { baseUrl: url, apiKey, api: apiType, models: [] };
+    saveConfig(config);
+    sessions[userId] = null;
+    await editMsg(chatId, msgId, `✅ Provider <code>${provName}</code> 已添加！\nAPI 类型：<code>${apiType}</code>`, {
+      reply_markup: { inline_keyboard: [[{ text: '➕ 添加模型', callback_data: `add_model_to_${provName}` }, { text: '🔄 重启', callback_data: 'restart' }]] }
+    });
+
   } else if (data === 'add_model') {
     const providers = Object.keys(config.models?.providers || {});
     await editMsg(chatId, msgId, '➕ <b>添加模型</b>\n\n选择 Provider：', {
@@ -901,13 +917,13 @@ async function handleText(chatId, userId, text) {
 
   } else if (session.step === 'add_provider_key') {
     const { provName, url } = session;
-    if (!config.models) config.models = { mode: 'merge', providers: {} };
-    if (!config.models.providers) config.models.providers = {};
-    config.models.providers[provName] = { baseUrl: url, apiKey: text.trim(), api: 'openai-completions', models: [] };
-    saveConfig(config);
-    sessions[userId] = null;
-    await sendMsg(chatId, `✅ Provider <code>${provName}</code> 已添加！`, {
-      reply_markup: { inline_keyboard: [[{ text: '➕ 添加模型', callback_data: `add_model_to_${provName}` }, { text: '🔄 重启', callback_data: 'restart' }]] }
+    sessions[userId] = { ...session, step: 'add_provider_api', apiKey: text.trim() };
+    await sendMsg(chatId, `🔧 选择 API 类型：`, {
+      reply_markup: { inline_keyboard: [
+        [{ text: 'Anthropic Messages (Claude)', callback_data: `add_provider_api_anthropic-messages` }],
+        [{ text: 'OpenAI Completions (GPT/DeepSeek)', callback_data: `add_provider_api_openai-completions` }],
+        [{ text: '❌ 取消', callback_data: 'menu_channels' }]
+      ]}
     });
 
   } else if (session.step === 'add_model_id') {
