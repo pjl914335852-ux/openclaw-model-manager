@@ -673,7 +673,12 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     }
     if (!config.models) config.models = { mode: 'merge', providers: {} };
     if (!config.models.providers) config.models.providers = {};
-    config.models.providers[provName] = { baseUrl: url, apiKey, api: apiType, models: [] };
+    // Auto-fix baseUrl: anthropic-messages appends /v1/messages, so strip trailing /v1 to avoid /v1/v1/messages
+    let cleanUrl = url.replace(/\/+$/, ''); // remove trailing slashes
+    if (apiType === 'anthropic-messages' && cleanUrl.endsWith('/v1')) {
+      cleanUrl = cleanUrl.slice(0, -3);
+    }
+    config.models.providers[provName] = { baseUrl: cleanUrl, apiKey, api: apiType, models: [] };
     saveConfig(config);
     sessions[userId] = null;
     await editMsg(chatId, msgId, `✅ Provider <code>${provName}</code> 已添加！\nAPI 类型：<code>${apiType}</code>`, {
@@ -857,7 +862,7 @@ async function handleText(chatId, userId, text) {
 
   if (session.step === 'add_provider_name') {
     sessions[userId] = { step: 'add_provider_url', provName: text.trim() };
-    await sendMsg(chatId, `名称：<code>${text.trim()}</code>\n\n请发送 Base URL（如：https://web.gaoqianba.com/v1）：`);
+    await sendMsg(chatId, `名称：<code>${text.trim()}</code>\n\n请发送 Base URL（如：https://web.gaoqianba.com）：\n<i>注：无需添加 /v1，系统会自动处理</i>`);
 
   } else if (session.step === 'add_provider_url') {
     sessions[userId] = { ...session, step: 'add_provider_key', url: text.trim() };
