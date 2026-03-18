@@ -574,7 +574,11 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     const parts = data.replace('cdm_', '').split('__');
     const provName = parts[0], modelId = parts.slice(1).join('__');
     if (config.models?.providers?.[provName]) {
-      config.models.providers[provName].models = (config.models.providers[provName].models||[]).filter(m => m.id !== modelId);
+      // Only remove the first matching model (avoid deleting duplicates all at once)
+      const models = config.models.providers[provName].models || [];
+      const idx = models.findIndex(m => m.id === modelId);
+      if (idx !== -1) models.splice(idx, 1);
+      config.models.providers[provName].models = models;
       if (config.agents?.defaults?.models) delete config.agents.defaults.models[`${provName}/${modelId}`];
       // 清理 channels.modelByChannel 里引用该模型的配置
       if (config.channels?.modelByChannel) {
