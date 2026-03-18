@@ -182,8 +182,9 @@ const PROVIDER_TEMPLATES = {
 function mainMenu() {
   return { inline_keyboard: [
     [{ text: '🔌 渠道管理', callback_data: 'menu_channels' }, { text: '⏰ 定时任务', callback_data: 'menu_cron' }],
-    [{ text: '🎯 默认模型', callback_data: 'set_default' }, { text: '💻 系统监控', callback_data: 'system_monitor' }],
-    [{ text: '👁 查看配置', callback_data: 'view_config' }, { text: '🔄 重启生效', callback_data: 'restart' }],
+    [{ text: '🎯 默认模型', callback_data: 'set_default' }, { text: '🤖 脚本模型', callback_data: 'menu_script_model' }],
+    [{ text: '💻 系统监控', callback_data: 'system_monitor' }, { text: '👁 查看配置', callback_data: 'view_config' }],
+    [{ text: '🔄 重启生效', callback_data: 'restart' }],
   ]};
 }
 
@@ -268,6 +269,34 @@ function getOpenClawCronJobs(userId, forceRefresh = false) {
 // 更新 cron 任务的模型
 function reloadGateway() {
   try { execSync('pkill -USR1 -f "openclaw.*gateway" 2>/dev/null || true', { timeout: 2000 }); } catch(e) {}
+}
+
+// 读取 secrets.env 中的 IKUNCODE_MODEL
+function getScriptModel() {
+  try {
+    const fs = require('fs');
+    const secretsPath = '/root/secrets.env';
+    const content = fs.readFileSync(secretsPath, 'utf8');
+    const match = content.match(/^export\s+IKUNCODE_MODEL=["']?([^"'\n]+)["']?/m);
+    return match ? match[1].trim() : null;
+  } catch(e) { return null; }
+}
+
+// 写入 IKUNCODE_MODEL 到 secrets.env
+function setScriptModel(model) {
+  try {
+    const fs = require('fs');
+    const secretsPath = '/root/secrets.env';
+    let content = fs.readFileSync(secretsPath, 'utf8');
+    const line = `export IKUNCODE_MODEL="${model}"`;
+    if (/^export\s+IKUNCODE_MODEL=/m.test(content)) {
+      content = content.replace(/^export\s+IKUNCODE_MODEL=.*/m, line);
+    } else {
+      content = content.trimEnd() + '\n' + line + '\n';
+    }
+    fs.writeFileSync(secretsPath, content);
+    return true;
+  } catch(e) { return false; }
 }
 
 function updateCronJobModel(jobId, model) {
@@ -722,6 +751,32 @@ async function handleCallback(chatId, userId, msgId, data, cbId) {
     saveConfig(config);
     await editMsg(chatId, msgId, `✅ 默认模型已设为：<code>${model}</code>\n\nGateway 正在重启，约5秒后生效`, {
       reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'main_menu' }]] }
+    });
+
+  } else if (data === 'menu_script_model') {
+    const providers = config.models?.providers || {};
+    const allModels = [];
+    for (const [provName, prov] of Object.entries(providers)) {
+      for (const m of (prov.models||[])) allModels.push(`${provName}/${m.id}`);
+    }
+    const current = getScriptModel() || '未设置';
+    await editMsg(chatId, msgId,
+      `🤖 <b>脚本模型设置</b>\n\n当前：<code>${current}</code>\n\n所有需要 AI 的脚本（Moltbook 发帖/评论、Binance 等）优先使用此模型，失败后自动降级。\n\n选择模型：`, {
+      reply_markup: { inline_keyboard: [
+        ...allModels.map(m => [{ text: (m === current ? '✅ ' : '') + m, callback_data: `set_script_model_${m}` }]),
+        [{ text: '◀ 返回', callback_data: 'main_menu' }]
+      ]}
+    });
+
+  } else if (data.startsWith('set_script_model_')) {
+    const model = data.replace('set_script_model_', '');
+    const modelName = model.includes('/') ? model.split('/').pop() : model;
+    const ok = setScriptModel(modelName);
+    await editMsg(chatId, msgId,
+      ok
+        ? `✅ 脚本模型已设为：<code>${modelName}</code>\n\n所有 AI 脚本下次执行时自动生效，无需重启。`
+        : `❌ 写入失败，请检查 /root/secrets.env 权限`, {
+      reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_script_model' }]] }
     });
 
   } else if (data.startsWith('edit_key_')) {
