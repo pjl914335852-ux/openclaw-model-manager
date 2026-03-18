@@ -939,17 +939,25 @@ async function handleText(chatId, userId, text) {
     const { provName } = session;
     const modelId = text.trim();
     if (!config.models.providers[provName].models) config.models.providers[provName].models = [];
-    config.models.providers[provName].models.push({
-      id: modelId, name: modelId, reasoning: false, input: ['text', 'image'],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 8192
-    });
-    if (!config.agents?.defaults?.models) { if (!config.agents) config.agents = {}; if (!config.agents.defaults) config.agents.defaults = {}; config.agents.defaults.models = {}; }
-    config.agents.defaults.models[`${provName}/${modelId}`] = {};
-    saveConfig(config);
-    sessions[userId] = null;
-    await sendMsg(chatId, `✅ 模型 <code>${provName}/${modelId}</code> 已添加！`, {
-      reply_markup: { inline_keyboard: [[{ text: '◀ 模型管理', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
-    });
+    const already = config.models.providers[provName].models.some(m => m.id === modelId);
+    if (already) {
+      sessions[userId] = null;
+      await sendMsg(chatId, `⚠️ 模型 <code>${modelId}</code> 已存在，无需重复添加`, {
+        reply_markup: { inline_keyboard: [[{ text: '◀ 返回', callback_data: 'menu_channels' }]] }
+      });
+    } else {
+      config.models.providers[provName].models.push({
+        id: modelId, name: modelId, reasoning: false, input: ['text', 'image'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 8192
+      });
+      if (!config.agents?.defaults?.models) { if (!config.agents) config.agents = {}; if (!config.agents.defaults) config.agents.defaults = {}; config.agents.defaults.models = {}; }
+      config.agents.defaults.models[`${provName}/${modelId}`] = {};
+      saveConfig(config);
+      sessions[userId] = null;
+      await sendMsg(chatId, `✅ 模型 <code>${provName}/${modelId}</code> 已添加！`, {
+        reply_markup: { inline_keyboard: [[{ text: '◀ 模型管理', callback_data: 'menu_channels' }, { text: '🔄 重启', callback_data: 'restart' }]] }
+      });
+    }
 
   } else if (session.step === 'edit_key') {
     const { provName } = session;
