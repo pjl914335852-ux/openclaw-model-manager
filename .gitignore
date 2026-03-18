@@ -4,3 +4,5 @@ node_modules/
 *.bak.*
 .DS_Store
 memory/
+moltbook-daily-post.sh
+moltbook-verify.py
